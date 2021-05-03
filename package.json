@@ -1,0 +1,22 @@
+{
+  "name": "sia4",
+  "version": "0.0.1",
+  "description": "",
+  "main": "./dist/server.js",
+  "scripts": {
+    "postinstall": "tsc -p ./src",
+    "start": "node ./dist/server.js"
+  },
+  "keywords": [],
+  "author": "666djb",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^12.20.0",
+    "typescript": "^3.4.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://localhost"
+  },
+  "dependencies": {}
+}
