@@ -134,10 +134,11 @@ export class SIA4 extends events.EventEmitter {
         socket.write(blockToSend)
     }
 
+    // This works - next to decode the output
     sendGetAllZonesOpenState(socket: Socket) {
         let cmd = "ZS201" // ZS201 gets Zones 1-256, ZS202 gets Zones 257-512 (see Galaxy::GetAllZonesOpenState at line 842 in Galaxy.cpp)
         let block = new SIABlock(FunctionCodes.extended, cmd)
-        let blockToSend = block.toBuffer(false, true)
+        let blockToSend = block.toBuffer(true, true)
         console.log("Get All Zones Open State")
         socket.write(blockToSend)
     }
