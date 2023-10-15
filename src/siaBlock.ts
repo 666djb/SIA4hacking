@@ -3,7 +3,8 @@ import { FunctionCodes } from "./functionCodes"
 const BASE_PARITY = 0xFF
 const HEADER_LENGTH = 2
 const PACKING_LENGTH = HEADER_LENGTH + 1
-const CHECK_OFFSET = 0x40
+const ACK_REQUEST = 0x40
+const REVERSE_CHANNEL_ENABLE = 0x80
 
 export class SIABlock {
 
@@ -25,25 +26,28 @@ export class SIABlock {
         const dataLength = this.data.length
         let bufferLength = dataLength + PACKING_LENGTH
         
-        let checkLength
+        let headerByte
+
+        // Ack Request should be 1 for ack==true, 0 for ack==false||header==false
+        // Reverse chan should be 1 for header==true, 0 for header==false
+
         if(ack===true){
-            checkLength = dataLength + CHECK_OFFSET
+            headerByte = dataLength + ACK_REQUEST + REVERSE_CHANNEL_ENABLE
         }else{
-            checkLength = dataLength
+            headerByte = dataLength + REVERSE_CHANNEL_ENABLE
         }
 
-        if(header===false){
-            checkLength = 0x00
+        if(header===false){ // If no header, then header byte is 0
+            headerByte = 0x00
         }
         
-        //bufferLength=66
         let buffer = Buffer.alloc(bufferLength)
 
-        buffer.writeInt8(checkLength, 0)
-        buffer.writeInt8(this.funcCode, 1)
+        buffer.writeUInt8(headerByte, 0)
+        buffer.writeUInt8(this.funcCode, 1)
 
         let parity = BASE_PARITY
-        parity ^= checkLength
+        parity ^= headerByte
         parity ^= this.funcCode
 
         this.data.split('').forEach((char, index) => {
@@ -52,8 +56,6 @@ export class SIABlock {
         })
 
         buffer[bufferLength - 1] = parity
-
-        //console.log("Parity:", parity)
 
         return buffer
     }
@@ -69,7 +71,7 @@ export class SIABlock {
 
     static checkParity(buffer: Buffer) {
 
-        let dataLength = buffer[0] - CHECK_OFFSET
+        let dataLength = buffer[0] - ACK_REQUEST
         let parity = BASE_PARITY
         let bufferLength = dataLength + PACKING_LENGTH
 
