@@ -1,7 +1,14 @@
-import { SIA4 } from "./sia4stuff"
+import { SIA4, Commands } from "./sia4stuff"
 
-const sia4 = new SIA4()
+// TODO: this is just for testing
 
-sia4.on('Event', async function(event: Event) {
-    console.log("Received event:", event)
+//let command=Commands.getAllZonesOpenState
+//let command=Commands.doUnset
+let command=Commands.getZoneState
+
+console.log(`Running commmand: ${command}`)
+const sia4 = new SIA4(command)
+
+sia4.on('status', async function(status: string) {
+    console.log("Received status:", status)
 })
