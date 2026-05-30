@@ -1,0 +1,10 @@
+{
+    "host": "hostname or IP",
+    "port": 10005,
+    "password": "543210",
+    "zones": {
+        "1001": "PIR 1",
+        "1002": "PIR 2",
+        "1003": "Contact 1"
+    }
+}

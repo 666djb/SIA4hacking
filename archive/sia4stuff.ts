@@ -7,27 +7,8 @@ import { Socket } from 'net'
 import { SIABlock } from "./siaBlock"
 import { FunctionCodes } from "./functionCodes"
 import * as events from "events"
-
-const ALARMHOST = "192.168.0.215" // IP or hostname of Flex alarm panel
-const ALARMPORT = 10005 // TCP port number that the Flex alarm panel is accepting remote connects on
-const PASSWORD = "543210" // Remote user password (543210 is the default)
-
-export enum Commands {
-    getZoneState = "Get Zone State",
-    getAllZonesOpenState = "Get All Zones Open State",
-    doUnset = "Do Unset",
-    doSet = "Do Set",
-    doPartSet = "Do Part Set"
-}
-
-enum SetCommands {
-    unset = 0, // 0 = Disarm area
-    set = 1,       // 1 = Arm area
-    partSet = 2,  // 2 = Partialy arm area
-    reset = 3,     // 3 = Reset area
-    abortSet = 4, // 4 = Abort arming of area
-    forceSet = 5
-}
+import { Commands } from "./sia4Commands"
+import { SetCommands } from "./setCommands"
 
 export class SIA4 extends events.EventEmitter {
     private command: Commands
@@ -39,8 +20,7 @@ export class SIA4 extends events.EventEmitter {
         let socket = new Socket()
 
         socket.on("data", (data: Buffer) => {
-            //let arr=[...data]
-            console.log(`Received data[${data.length}] in decimal: ${[...data]}`)
+            //console.log(`Received data[${data.length}] in decimal: ${[...data]}`)
             let siaBlock = SIABlock.fromBuffer(data)
 
             //console.log(`Function code: ${FunctionCodes[siaBlock.funcCode]}\nData: ${siaBlock.data}`)
@@ -48,7 +28,7 @@ export class SIA4 extends events.EventEmitter {
             // Respond if necessary
             switch (data[1]) {
                 case FunctionCodes.configuration:
-                    console.log("Got configuration message")
+                    //console.log("Got configuration message")
                     // TODO could decode configuration message to check we are talking the right language
                     // Currently this is AL4B15 - AL4 means SIA level 4 is being used.
 
@@ -79,14 +59,17 @@ export class SIA4 extends events.EventEmitter {
                         console.log("Extended response delimiter in wrong place, index:", delimiterPosition)
                         break
                     }
-                    
+
                     let cmd = siaBlock.data.slice(0, delimiterPosition)
-                    
+
                     switch (cmd.slice(0, 2)) {
                         case "ZS": // Zone state
                             if (cmd.slice(2) === "201") { // First half of all zones, i.e. Zones 1-256
-                                console.log("Got multiple zone state (ZS201)")
-                                this.decodeMultipleZones(siaBlock.data.slice(delimiterPosition + 1, data.length /*- 1*/))
+                                //console.log("Got multiple zone state (ZS201)")
+                                let openZones = this.decodeMultipleZones(siaBlock.data.slice(delimiterPosition + 1, data.length))
+                                if (openZones.length > 0) {
+                                    console.log("Open zones:", openZones)
+                                }
                             } else if (delimiterPosition == 6) { // Single zone state because it has ZS and a four character number
                                 this.emit("status", `Zone ${cmd.slice(2, 6)} : ${this.decodeSingleZone(cmd.slice(2, 6), siaBlock.data.slice(delimiterPosition + 1, data.length /*- 1*/))}`)
                             } else {
@@ -110,15 +93,18 @@ export class SIA4 extends events.EventEmitter {
         })
 
         socket.on("close", () => {
-            console.log("socket closed")
+            //console.log("socket closed")
+            this.emit("close")
+
             // Reconnect after 5 seconds
-            //setTimeout(() => {
-            //    this.connect(socket)
-            //}, 5000)
+            setTimeout(() => {
+                this.connect(socket)
+            }, 5000)
+
         })
 
         socket.on("connect", () => {
-            console.log("Connected to socket")
+            //console.log("Connected to socket")
         })
 
         this.connect(socket)
@@ -126,13 +112,13 @@ export class SIA4 extends events.EventEmitter {
 
     connect(socket: Socket) {
         socket.connect(ALARMPORT, ALARMHOST, () => {
-            console.log("Connected to remote")
+            //console.log("Connected to remote")
             this.doLogin(socket)
         })
     }
 
     doLogin(socket: Socket) {
-        console.log("Doing login")
+        //console.log("Doing login")
         let block = new SIABlock(FunctionCodes.remote_login, PASSWORD)
         let blockToSend = block.toBuffer(true, true)
         socket.write(blockToSend)
@@ -185,10 +171,10 @@ export class SIA4 extends events.EventEmitter {
     // TODO: decode the output that is returned
     sendGetAllZonesOpenState(socket: Socket, half: number) {
         let cmd = "ZS20" + half // ZS201 gets Zones 1-256, ZS202 gets Zones 257-512 (see Galaxy::GetAllZonesOpenState at line 842 in Galaxy.cpp)
-        console.log("cmd:",cmd)
+        //console.log("cmd:", cmd)
         let block = new SIABlock(FunctionCodes.extended, cmd)
         let blockToSend = block.toBuffer(true, true)
-        console.log("Get All Zones Open State")
+        //console.log("Get All Zones Open State")
         socket.write(blockToSend)
     }
 
@@ -218,8 +204,30 @@ export class SIA4 extends events.EventEmitter {
         socket.write(blockToSend)
     }
 
-    decodeMultipleZones(zoneData: string) {
-        console.log("zoneData", Buffer.from(zoneData, "utf-8"))
+
+    /**
+     * Maps a string of characters representing multiple bytes to an array of active zones.
+     * 
+     * - 1st byte (index 0) represents zones 1001-1008
+     * - 2nd byte (index 1) represents zones 1011-1018
+     * - 3rd byte (index 2) represents zones 1021-1028
+     * - ... and so on (1001 + index * 10 to 1008 + index * 10)
+     * 
+     * @param {string} zoneData - The string.
+     * @returns {number[]|null} An array of active zone numbers.
+     */
+    private decodeMultipleZones(zoneData: string) {
+        const activeZones: number[] = [];
+        for (let i = 0; i < zoneData.length; i++) {
+            const charCode = zoneData.charCodeAt(i);
+            const baseZone = 1001 + i * 10;
+            for (let bit = 0; bit < 8; bit++) {
+                if ((charCode & (1 << bit)) !== 0) {
+                    activeZones.push(baseZone + bit);
+                }
+            }
+        }
+        return activeZones;
     }
 
     private decodeSingleZone(zone: string, zoneData: string): string {
@@ -236,17 +244,17 @@ export class SIA4 extends events.EventEmitter {
                 fault          // 8 = Zone fault
             };
         */
-        let zoneDataValue=Number(zoneData[0])
-        if(isNaN(zoneDataValue) || zoneDataValue <0 || zoneDataValue > 8){
+        let zoneDataValue = Number(zoneData[0])
+        if (isNaN(zoneDataValue) || zoneDataValue < 0 || zoneDataValue > 8) {
             return "Bad zoneData"
         }
         const zoneState = ["Tamper SC", "Low Resistance", "Closed", "High Resistance", "Open", "Tamper OC", "Masked", "Tamper CV", "Fault"]
         return zoneState[Number(zoneData[0])]
     }
 
-    private toBinary(integer: number, withPaddingLength: number) {
-        let str = integer.toString(2);
-        return str.padStart(withPaddingLength, "0");
-    }
+    // private toBinary(integer: number, withPaddingLength: number) {
+    //     let str = integer.toString(2);
+    //     return str.padStart(withPaddingLength, "0");
+    // }
 
 }
